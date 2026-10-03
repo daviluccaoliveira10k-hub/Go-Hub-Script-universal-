@@ -1,0 +1,706 @@
+local Players      = game:GetService("Players")
+local RunService   = game:GetService("RunService")
+local Lighting     = game:GetService("Lighting")
+local SoundService = game:GetService("SoundService")
+
+local player = Players.LocalPlayer
+local char   = player.Character or player.CharacterAdded:Wait()
+local hrp    = char:WaitForChild("HumanoidRootPart")
+local hum    = char:WaitForChild("Humanoid")
+
+-- ==========================================
+-- Utilidades
+-- ==========================================
+local function randomString(len)
+    local chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+    local s = ""
+    for _ = 1, len do
+        local i = math.random(1, #chars)
+        s = s .. chars:sub(i, i)
+    end
+    return s
+end
+
+local function getForward()
+    local look = hrp.CFrame.LookVector
+    local flat = Vector3.new(look.X, 0, look.Z)
+    if flat.Magnitude < 0.1 then flat = Vector3.new(0, 0, -1) end
+    return flat.Unit
+end
+
+local function getCameraForward()
+    local cam = workspace.CurrentCamera
+    if not cam then return getForward() end
+    local look = cam.CFrame.LookVector
+    local flat = Vector3.new(look.X, 0, look.Z)
+    if flat.Magnitude < 0.1 then return getForward() end
+    return flat.Unit
+end
+
+local function placeAlongY(part, pos, dir)
+    local yAxis = dir.Unit
+    local ref = Vector3.new(1, 0, 0)
+    if math.abs(yAxis:Dot(ref)) > 0.95 then
+        ref = Vector3.new(0, 0, 1)
+    end
+    local xAxis = ref:Cross(yAxis).Unit
+    local zAxis = xAxis:Cross(yAxis).Unit
+    part.CFrame = CFrame.fromMatrix(pos, xAxis, yAxis, zAxis)
+end
+
+-- 🎨 ColorCorrection
+local ccEffect = Instance.new("ColorCorrectionEffect")
+ccEffect.Name = "CorCaos"
+ccEffect.Parent = Lighting
+
+-- ☁️ Céu
+local atmosfera = nil
+local function configurarCeu()
+    local sky = Lighting:FindFirstChildOfClass("Sky")
+    if sky then sky:Destroy() end
+    atmosfera = Lighting:FindFirstChildOfClass("Atmosphere")
+    if not atmosfera then
+        atmosfera = Instance.new("Atmosphere")
+        atmosfera.Density = 0.5
+        atmosfera.Parent  = Lighting
+    end
+end
+
+-- 💬 Esconder UI
+local function esconderUI()
+    pcall(function()
+        local sg = game:GetService("StarterGui")
+        sg:SetCoreGuiEnabled(Enum.CoreGuiType.Chat, false)
+        sg:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, false)
+    end)
+end
+
+-- 👥 Sumir outros players
+local function sumirTudo()
+    for _, outro in ipairs(Players:GetPlayers()) do
+        if outro ~= player and outro.Character then
+            local c = outro.Character
+            for _, p in ipairs(c:GetDescendants()) do
+                if p:IsA("BasePart") then
+                    p.Transparency = 1
+                    p.CanCollide = false
+                    p.CastShadow = false
+                elseif p:IsA("Decal") or p:IsA("Texture") then
+                    p.Transparency = 1
+                end
+            end
+            local head = c:FindFirstChild("Head")
+            if head then
+                for _, v in ipairs(head:GetChildren()) do
+                    if v:IsA("BillboardGui") or v:IsA("SurfaceGui") then
+                        v:Destroy()
+                    end
+                end
+            end
+            for _, p in ipairs(c:GetDescendants()) do
+                if p:IsA("Accessory") or p:IsA("Shirt") or p:IsA("Pants")
+                   or p:IsA("ShirtGraphic") or p:IsA("CharacterMesh") or p:IsA("Hat") then
+                    pcall(function() p:Destroy() end)
+                end
+            end
+            local hl = c:FindFirstChildOfClass("Highlight")
+            if hl then hl:Destroy() end
+            local h = c:FindFirstChildOfClass("Humanoid")
+            if h then h.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None end
+        end
+    end
+end
+
+Players.PlayerAdded:Connect(function(novo)
+    novo.CharacterAdded:Connect(function()
+        task.wait(1)
+        sumirTudo()
+    end)
+end)
+
+-- ==========================================
+-- Construtor humanóide
+-- ==========================================
+local function buildHumanoid(name, color, neon)
+    local model = Instance.new("Model")
+    model.Name = name
+    local h = Instance.new("Humanoid")
+    h.Parent = model
+    h.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+
+    local function mk(pname, size)
+        local p = Instance.new("Part")
+        p.Name = pname
+        p.Size = size
+        p.Color = color
+        p.Material = neon and Enum.Material.Neon or Enum.Material.SmoothPlastic
+        p.Anchored = false
+        p.CanCollide = false
+        p.TopSurface = Enum.SurfaceType.Smooth
+        p.BottomSurface = Enum.SurfaceType.Smooth
+        p.Parent = model
+        return p
+    end
+
+    local hrpP = mk("HumanoidRootPart", Vector3.new(2,2,1))
+    hrpP.Transparency = 1
+    hrpP.Anchored = true
+
+    local parts = {
+        LowerTorso    = mk("LowerTorso",    Vector3.new(2, 1.2, 1)),
+        UpperTorso    = mk("UpperTorso",    Vector3.new(2, 1.6, 1)),
+        Head          = mk("Head",          Vector3.new(1.5, 1.5, 1.5)),
+        LeftUpperArm  = mk("LeftUpperArm",  Vector3.new(1, 1.2, 1)),
+        LeftLowerArm  = mk("LeftLowerArm",  Vector3.new(1, 1.1, 1)),
+        LeftHand      = mk("LeftHand",      Vector3.new(1, 0.5, 1)),
+        RightUpperArm = mk("RightUpperArm", Vector3.new(1, 1.2, 1)),
+        RightLowerArm = mk("RightLowerArm", Vector3.new(1, 1.1, 1)),
+        RightHand     = mk("RightHand",     Vector3.new(1, 0.5, 1)),
+        LeftUpperLeg  = mk("LeftUpperLeg",  Vector3.new(1, 1.4, 1)),
+        LeftLowerLeg  = mk("LeftLowerLeg",  Vector3.new(1, 1.3, 1)),
+        LeftFoot      = mk("LeftFoot",      Vector3.new(1, 0.4, 1.4)),
+        RightUpperLeg = mk("RightUpperLeg", Vector3.new(1, 1.4, 1)),
+        RightLowerLeg = mk("RightLowerLeg", Vector3.new(1, 1.3, 1)),
+        RightFoot     = mk("RightFoot",     Vector3.new(1, 0.4, 1.4)),
+    }
+    parts.Head.Shape = Enum.PartType.Ball
+    model.PrimaryPart = hrpP
+
+    local function weld(a, b)
+        local w = Instance.new("WeldConstraint")
+        w.Part0 = a; w.Part1 = b; w.Parent = a
+    end
+
+    local offsets = {
+        LowerTorso    = Vector3.new(0, -0.2, 0),
+        UpperTorso    = Vector3.new(0,  1.0, 0),
+        Head          = Vector3.new(0,  2.5, 0),
+        LeftUpperArm  = Vector3.new(-1.5,  1.2, 0),
+        LeftLowerArm  = Vector3.new(-1.5,  0.0, 0),
+        LeftHand      = Vector3.new(-1.5, -0.8, 0),
+        RightUpperArm = Vector3.new( 1.5,  1.2, 0),
+        RightLowerArm = Vector3.new( 1.5,  0.0, 0),
+        RightHand     = Vector3.new( 1.5, -0.8, 0),
+        LeftUpperLeg  = Vector3.new(-0.5, -1.4, 0),
+        LeftLowerLeg  = Vector3.new(-0.5, -2.8, 0),
+        LeftFoot      = Vector3.new(-0.5, -3.9, 0.3),
+        RightUpperLeg = Vector3.new( 0.5, -1.4, 0),
+        RightLowerLeg = Vector3.new( 0.5, -2.8, 0),
+        RightFoot     = Vector3.new( 0.5, -3.9, 0.3),
+    }
+
+    for pname, part in pairs(parts) do
+        part.CFrame = hrpP.CFrame * CFrame.new(offsets[pname])
+        weld(hrpP, part)
+    end
+
+    return model, hrpP, parts
+end
+
+-- 🌈 Cores caóticas
+local coresAtivo = false
+local function ativarCores()
+    if coresAtivo then return end
+    coresAtivo = true
+    configurarCeu()
+    task.spawn(function()
+        local paleta = {
+            Color3.new(1, 0, 0), Color3.new(0, 0, 1), Color3.new(0, 1, 0),
+            Color3.new(0.6, 0, 1), Color3.new(1, 1, 0), Color3.new(1, 0, 1),
+            Color3.new(0, 1, 1),
+        }
+        while coresAtivo do
+            local cor = paleta[math.random(1, #paleta)]
+            Lighting.Ambient         = cor
+            Lighting.OutdoorAmbient  = cor
+            Lighting.FogColor        = cor
+            Lighting.Brightness      = 3
+            if atmosfera then
+                atmosfera.Color = cor
+                atmosfera.Decay = cor
+            end
+            ccEffect.TintColor = cor
+            task.wait(0.05)
+        end
+    end)
+end
+
+-- ==========================================
+-- 🕐 LINHA DO TEMPO
+-- ==========================================
+task.spawn(function()
+
+    -- [0s] NPC PRETO
+    local npc, hrpNPC, npcParts = buildHumanoid("NPC_Preto", Color3.new(0,0,0), false)
+    npc.Parent = workspace
+
+    local bb = Instance.new("BillboardGui")
+    bb.Size = UDim2.new(0, 250, 0, 60)
+    bb.StudsOffset = Vector3.new(0, 3.5, 0)
+    bb.AlwaysOnTop = true
+    bb.Parent = npcParts.Head
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.TextColor3 = Color3.new(0, 0, 0)
+    label.TextStrokeTransparency = 1
+    label.Font = Enum.Font.SourceSansBold
+    label.TextScaled = true
+    label.Text = randomString(8)
+    label.Parent = bb
+
+    -- Y travado (não voa)
+    local backDir = -getForward()
+    local posAtras = Vector3.new(hrp.Position.X, hrp.Position.Y, hrp.Position.Z) + backDir * 6
+    hrpNPC.CFrame = CFrame.new(posAtras, posAtras - backDir)
+
+    task.spawn(function()
+        while npc.Parent do
+            label.Text = randomString(math.random(4, 10))
+            task.wait(0.001)
+        end
+    end)
+
+    -- [10s] DISTORÇÃO
+    task.wait(10)
+    for _, p in pairs(npcParts) do
+        p.Material = Enum.Material.Neon
+    end
+    task.spawn(function()
+        while npc.Parent do
+            for _, p in pairs(npcParts) do
+                if p.Name ~= "HumanoidRootPart" then
+                    p.Size = Vector3.new(
+                        p.Size.X * (1 + math.random(-20,20)/100),
+                        p.Size.Y * (1 + math.random(-20,20)/100),
+                        p.Size.Z * (1 + math.random(-20,20)/100))
+                end
+            end
+            task.wait(0.05)
+        end
+    end)
+
+    -- [20s] ONDA
+    task.wait(10)
+    local VELOCIDADE = 100
+    local DISTANCIA  = 1000
+    local PARADA     = 3
+
+    local wave = Instance.new("Part")
+    wave.Name = "OndaPreta"
+    wave.Size = Vector3.new(1200, 1200, 5)
+    wave.Anchored = true
+    wave.CanCollide = false
+    wave.Material = Enum.Material.SmoothPlastic
+    wave.Color = Color3.new(0,0,0)
+    wave.CFrame = CFrame.new(hrp.Position + getForward() * DISTANCIA, hrp.Position)
+    wave.Parent = workspace
+
+    local borda = Instance.new("SelectionBox")
+    borda.Adornee = wave
+    borda.LineThickness = 0.15
+    borda.Color3 = Color3.new(1, 0, 0)
+    borda.SurfaceColor3 = Color3.new(1, 0, 0)
+    borda.SurfaceTransparency = 1
+    borda.Transparency = 0
+    borda.Parent = wave
+
+    local somOnda = Instance.new("Sound")
+    somOnda.SoundId = "rbxasset://sounds/action_falling.mp3"
+    somOnda.Volume = 4
+    somOnda.Looped = true
+    somOnda.RollOffMaxDistance = 5000
+    somOnda.Parent = wave
+    somOnda:Play()
+
+    local chegouOnda = false
+    while not chegouOnda do
+        local dt = RunService.Heartbeat:Wait()
+        local dir  = hrp.Position - wave.Position
+        local dist = dir.Magnitude
+        local passo = math.min(VELOCIDADE * dt, math.max(0, dist - PARADA))
+        if passo > 0 then
+            wave.CFrame = CFrame.new(wave.Position + dir.Unit * passo, hrp.Position)
+        end
+        somOnda.Volume = 2 + (1 - math.clamp(dist / DISTANCIA, 0, 1)) * 6
+        local distAtual = (hrp.Position - wave.Position).Magnitude
+        if distAtual <= PARADA + 1 then chegouOnda = true end
+    end
+
+    wave:Destroy()
+    somOnda:Destroy()
+
+    -- [30s] Players + UI somem
+    esconderUI()
+    sumirTudo()
+
+    -- =====================================
+    -- [40s] FIGURA COM GARRAS
+    -- =====================================
+    task.wait(10)
+
+    local figura = Instance.new("Model")
+    figura.Name = "FiguraPreta"
+
+    local PRETO = Color3.new(0, 0, 0)
+    local function mkFig(n, s, isBall)
+        local p = Instance.new("Part")
+        p.Name = n
+        if isBall then p.Shape = Enum.PartType.Ball end
+        p.Size = s
+        p.Color = PRETO
+        p.Material = Enum.Material.SmoothPlastic
+        p.Anchored = true
+        p.CanCollide = false
+        p.TopSurface = Enum.SurfaceType.Smooth
+        p.BottomSurface = Enum.SurfaceType.Smooth
+        p.Parent = figura
+        return p
+    end
+
+    local HEAD_SZ      = 1.4
+    local LOWER_T_SZ   = Vector3.new(1.5, 1.3, 0.9)
+    local UPPER_T_SZ   = Vector3.new(1.7, 2.1, 1.0)
+    local UPPER_ARM_SZ = Vector3.new(0.65, 1.4, 0.65)
+    local LOWER_ARM_SZ = Vector3.new(0.6, 1.3, 0.6)
+    local UPPER_LEG_SZ = Vector3.new(0.75, 1.8, 0.75)
+    local LOWER_LEG_SZ = Vector3.new(0.7, 1.7, 0.7)
+    local FOOT_SZ      = Vector3.new(0.8, 0.35, 1.3)
+
+    local fHead       = mkFig("Head",         Vector3.new(HEAD_SZ, HEAD_SZ * 1.1, HEAD_SZ), true)
+    local fLowerTorso = mkFig("LowerTorso",   LOWER_T_SZ)
+    local fUpperTorso = mkFig("UpperTorso",   UPPER_T_SZ)
+
+    -- Braços
+    local fLUA = mkFig("LeftUpperArm",  UPPER_ARM_SZ)
+    local fLLA = mkFig("LeftLowerArm",  LOWER_ARM_SZ)
+    local fRUA = mkFig("RightUpperArm", UPPER_ARM_SZ)
+    local fRLA = mkFig("RightLowerArm", LOWER_ARM_SZ)
+
+    -- 🗡️ GARRAS: Grande → Médio → Pequeno
+    local fLSpike1 = mkFig("LSpike1", Vector3.new(1.1, 0.8, 1.1))    -- GRANDE
+    local fLSpike2 = mkFig("LSpike2", Vector3.new(0.6, 0.7, 0.6))    -- MÉDIO
+    local fLSpike3 = mkFig("LSpike3", Vector3.new(0.15, 0.6, 0.15))  -- PEQUENO
+
+    local fRSpike1 = mkFig("RSpike1", Vector3.new(1.1, 0.8, 1.1))    -- GRANDE
+    local fRSpike2 = mkFig("RSpike2", Vector3.new(0.6, 0.7, 0.6))    -- MÉDIO
+    local fRSpike3 = mkFig("RSpike3", Vector3.new(0.15, 0.6, 0.15))  -- PEQUENO
+
+    local fLUL = mkFig("LeftUpperLeg",  UPPER_LEG_SZ)
+    local fLLL = mkFig("LeftLowerLeg",  LOWER_LEG_SZ)
+    local fLF  = mkFig("LeftFoot",      FOOT_SZ)
+    local fRUL = mkFig("RightUpperLeg", UPPER_LEG_SZ)
+    local fRLL = mkFig("RightLowerLeg", LOWER_LEG_SZ)
+    local fRF  = mkFig("RightFoot",     FOOT_SZ)
+
+    figura.PrimaryPart = fUpperTorso
+    figura.Parent = workspace
+
+    local somAlto = Instance.new("Sound")
+    somAlto.SoundId = "rbxassetid://6868409691"
+    somAlto.Volume = 12
+    somAlto.Looped = true
+    somAlto.Parent = SoundService
+
+    local UA_LEN  = UPPER_ARM_SZ.Y
+    local LA_LEN  = LOWER_ARM_SZ.Y
+    local UL_LEN  = UPPER_LEG_SZ.Y
+    local LL_LEN  = LOWER_LEG_SZ.Y
+    local FT_LEN  = FOOT_SZ.Y
+
+    -- =====================================
+    -- 🎬 ANIMADOR — CONVULSÃO
+    -- =====================================
+    local function updateFigure(groundCF, phase, idle, stretch)
+        idle    = idle or false
+        stretch = stretch or 0
+
+        local t1 = phase * 10
+        local t2 = phase * 14
+        local t3 = phase * 18
+        local t4 = phase * 22
+        local t5 = phase * 26
+
+        local lean = -18
+        local body = groundCF * CFrame.Angles(math.rad(lean), 0, 0)
+
+        local hipHeight = UL_LEN + LL_LEN + FT_LEN
+        local hipCF = body * CFrame.new(0, hipHeight, 0)
+
+        fLowerTorso.CFrame = hipCF * CFrame.new(0, LOWER_T_SZ.Y * 0.5, 0)
+        fUpperTorso.CFrame = hipCF * CFrame.new(0, LOWER_T_SZ.Y + UPPER_T_SZ.Y * 0.5, 0)
+
+        -- Cabeça em convulsão
+        local headX = idle and 0 or (math.sin(t4) * 0.7 + (math.random() - 0.5) * 0.3)
+        local headY = idle and 0 or (math.sin(t5) * 0.9 + (math.random() - 0.5) * 0.4)
+        local headZ = idle and 0 or (math.sin(t3) * 0.9 + (math.random() - 0.5) * 0.4)
+
+        local headY_Off = LOWER_T_SZ.Y + UPPER_T_SZ.Y + HEAD_SZ * 0.55
+        fHead.CFrame = hipCF * CFrame.new(0, headY_Off, 0)
+            * CFrame.Angles(headX, headY, headZ)
+
+        -- Braços em convulsão
+        local shoulderY = LOWER_T_SZ.Y + UPPER_T_SZ.Y * 0.85
+        local lShoulder = hipCF * CFrame.new(-0.85, shoulderY, 0)
+        local rShoulder = hipCF * CFrame.new( 0.85, shoulderY, 0)
+
+        local dirBase = (Vector3.new(0, -1, 0) * (1 - stretch) + Vector3.new(0, 0, -1) * stretch).Unit
+
+        local cx1 = math.sin(t1) * 1.8
+        local cy1 = math.sin(t2) * 1.2
+        local cz1 = math.sin(t3) * 1.5
+        local jx1 = (math.random() - 0.5) * 0.6
+        local jy1 = (math.random() - 0.5) * 0.6
+        local jz1 = (math.random() - 0.5) * 0.6
+
+        local cx2 = math.sin(t1 + 0.7) * 1.8
+        local cy2 = math.sin(t2 + 1.3) * 1.2
+        local cz2 = math.sin(t3 + 2.1) * 1.5
+        local jx2 = (math.random() - 0.5) * 0.6
+        local jy2 = (math.random() - 0.5) * 0.6
+        local jz2 = (math.random() - 0.5) * 0.6
+
+        if idle then
+            cx1, cy1, cz1 = math.sin(t4) * 0.05, math.sin(t5) * 0.05, 0
+            cx2, cy2, cz2 = math.sin(t5) * 0.05, math.sin(t4) * 0.05, 0
+            jx1, jy1, jz1 = 0, 0, 0
+            jx2, jy2, jz2 = 0, 0, 0
+        end
+
+        local convFactor = 1 - stretch * 0.7
+        cx1, cy1, cz1 = cx1 * convFactor, cy1 * convFactor, cz1 * convFactor
+        cx2, cy2, cz2 = cx2 * convFactor, cy2 * convFactor, cz2 * convFactor
+
+        local rotL = CFrame.Angles(cx1 + jx1, cy1 + jy1, cz1 + jz1)
+        local rotR = CFrame.Angles(cx2 + jx2, cy2 + jy2, cz2 + jz2)
+
+        local dirLLocal = rotL * dirBase
+        local dirRLocal = rotR * dirBase
+
+        local dirL = body:VectorToWorldSpace(dirLLocal)
+        local dirR = body:VectorToWorldSpace(dirRLocal)
+
+        -- 🗡️ Braço esquerdo + garra
+        local lShPos = lShoulder.Position
+        local lBase = UA_LEN + LA_LEN
+        placeAlongY(fLUA,     lShPos + dirL * (UA_LEN * 0.5),           dirL)
+        placeAlongY(fLLA,     lShPos + dirL * (UA_LEN + LA_LEN * 0.5),  dirL)
+        placeAlongY(fLSpike1, lShPos + dirL * (lBase + 0.4),            dirL)  -- GRANDE
+        placeAlongY(fLSpike2, lShPos + dirL * (lBase + 1.15),           dirL)  -- MÉDIO
+        placeAlongY(fLSpike3, lShPos + dirL * (lBase + 1.8),            dirL)  -- PEQUENO
+
+        -- 🗡️ Braço direito + garra
+        local rShPos = rShoulder.Position
+        local rBase = UA_LEN + LA_LEN
+        placeAlongY(fRUA,     rShPos + dirR * (UA_LEN * 0.5),           dirR)
+        placeAlongY(fRLA,     rShPos + dirR * (UA_LEN + LA_LEN * 0.5),  dirR)
+        placeAlongY(fRSpike1, rShPos + dirR * (rBase + 0.4),            dirR)
+        placeAlongY(fRSpike2, rShPos + dirR * (rBase + 1.15),           dirR)
+        placeAlongY(fRSpike3, rShPos + dirR * (rBase + 1.8),            dirR)
+
+        -- Pernas em convulsão
+        local lHip = hipCF * CFrame.new(-0.4, 0, 0)
+        local rHip = hipCF * CFrame.new( 0.4, 0, 0)
+
+        local legCx1 = math.sin(t1 + 0.4) * 1.5
+        local legCy1 = math.sin(t2 + 0.9) * 1.0
+        local legCz1 = math.sin(t3 + 1.7) * 1.2
+        local legJx1 = (math.random() - 0.5) * 0.5
+        local legJy1 = (math.random() - 0.5) * 0.5
+        local legJz1 = (math.random() - 0.5) * 0.5
+
+        local legCx2 = math.sin(t1 + 1.9) * 1.5
+        local legCy2 = math.sin(t2 + 2.5) * 1.0
+        local legCz2 = math.sin(t3 + 3.1) * 1.2
+        local legJx2 = (math.random() - 0.5) * 0.5
+        local legJy2 = (math.random() - 0.5) * 0.5
+        local legJz2 = (math.random() - 0.5) * 0.5
+
+        if idle then
+            legCx1, legCy1, legCz1 = 0, 0, 0
+            legCx2, legCy2, legCz2 = 0, 0, 0
+            legJx1, legJy1, legJz1 = 0, 0, 0
+            legJx2, legJy2, legJz2 = 0, 0, 0
+        end
+
+        local lThighCF = lHip * CFrame.Angles(legCx1 + legJx1, legCy1 + legJy1, legCz1 + legJz1)
+        fLUL.CFrame = lThighCF * CFrame.new(0, -UL_LEN * 0.5, 0)
+
+        local lKneeCF = lThighCF * CFrame.new(0, -UL_LEN, 0)
+        local lCalfX = math.sin(t4 + 0.3) * 0.6 + (math.random() - 0.5) * 0.4
+        local lCalfY = math.sin(t5 + 0.6) * 0.4
+        local lCalfZ = math.sin(t3 + 1.1) * 0.5
+        local lCalfCF = lKneeCF * CFrame.Angles(lCalfX, lCalfY, lCalfZ)
+        fLLL.CFrame = lCalfCF * CFrame.new(0, -LL_LEN * 0.5, 0)
+
+        local lFootCF = lCalfCF * CFrame.new(0, -LL_LEN, 0)
+        fLF.CFrame = lFootCF * CFrame.new(0, -FT_LEN * 0.5, -0.15)
+            * CFrame.Angles(math.sin(t5) * 0.4, 0, 0)
+
+        local rThighCF = rHip * CFrame.Angles(legCx2 + legJx2, legCy2 + legJy2, legCz2 + legJz2)
+        fRUL.CFrame = rThighCF * CFrame.new(0, -UL_LEN * 0.5, 0)
+
+        local rKneeCF = rThighCF * CFrame.new(0, -UL_LEN, 0)
+        local rCalfX = math.sin(t4 + 1.7) * 0.6 + (math.random() - 0.5) * 0.4
+        local rCalfY = math.sin(t5 + 2.0) * 0.4
+        local rCalfZ = math.sin(t3 + 2.6) * 0.5
+        local rCalfCF = rKneeCF * CFrame.Angles(rCalfX, rCalfY, rCalfZ)
+        fRLL.CFrame = rCalfCF * CFrame.new(0, -LL_LEN * 0.5, 0)
+
+        local rFootCF = rCalfCF * CFrame.new(0, -LL_LEN, 0)
+        fRF.CFrame = rFootCF * CFrame.new(0, -FT_LEN * 0.5, -0.15)
+            * CFrame.Angles(math.sin(t5 + 1.3) * 0.4, 0, 0)
+    end
+
+    -- Spawn: 400 studs na frente
+    local camLook  = getCameraForward()
+    local groundY  = hrp.Position.Y - 3.5
+    local figPos   = hrp.Position + camLook * 400
+    figPos = Vector3.new(figPos.X, groundY, figPos.Z)
+
+    local target0 = Vector3.new(hrp.Position.X, groundY, hrp.Position.Z)
+    updateFigure(CFrame.new(figPos, target0), 0, true, 0)
+
+    -- 💡 Luzes
+    local luzesCriadas = false
+    local function criarLuzes()
+        if luzesCriadas then return end
+        luzesCriadas = true
+
+        for _, p in ipairs(figura:GetChildren()) do
+            if p:IsA("BasePart") then
+                local luz = Instance.new("PointLight")
+                luz.Brightness = 15
+                luz.Range = 60
+                luz.Color = Color3.new(1, 1, 1)
+                luz.Shadows = false
+                luz.Parent = p
+            end
+        end
+
+        for i = 1, 6 do
+            local luz = Instance.new("PointLight")
+            luz.Brightness = 20
+            luz.Range = 80
+            luz.Color = Color3.new(1, 1, 1)
+            luz.Shadows = false
+            luz.Parent = hrp
+        end
+
+        Lighting.Brightness = 5
+        Lighting.Ambient = Color3.new(1, 1, 1)
+        Lighting.OutdoorAmbient = Color3.new(1, 1, 1)
+    end
+
+    -- =====================================
+    -- 🐌 LAG 0 FPS (trava de verdade)
+    -- =====================================
+    local lagAtivo = false
+    local function ativarLag()
+        if lagAtivo then return end
+        lagAtivo = true
+        ativarCores()
+        criarLuzes()
+
+        -- 🐌 100 threads SEM task.wait = congela o jogo
+        for _ = 1, 100 do
+            task.spawn(function()
+                while lagAtivo do
+                    local acc = 0
+                    for i = 1, 500000 do
+                        acc = acc + math.sqrt(i) * math.sin(i) * math.cos(i)
+                    end
+                    -- sem task.wait = trava tudo
+                end
+            end)
+        end
+    end
+
+    -- FASE 1: olha 5s
+    local inicioOlhar = tick()
+    local TEMPO_OLHAR = 5
+
+    somAlto:Stop()
+
+    while tick() - inicioOlhar < TEMPO_OLHAR do
+        local target = Vector3.new(hrp.Position.X, groundY, hrp.Position.Z)
+        updateFigure(CFrame.new(figPos, target), tick(), true, 0)
+        RunService.Heartbeat:Wait()
+    end
+
+    -- FASE 2: corre
+    somAlto:Play()
+
+    local VEL_FIGURA  = 150
+    local DIST_ESTICA = 30
+    local DIST_PARADA = 6
+
+    local fase    = 0
+    local stretch = 0
+
+    while true do
+        local dt = RunService.Heartbeat:Wait()
+
+        local target = Vector3.new(hrp.Position.X, groundY, hrp.Position.Z)
+        local dir    = target - figPos
+        local dist   = dir.Magnitude
+
+        if dist < DIST_ESTICA then
+            stretch = math.min(stretch + dt * 1.2, 1)
+        else
+            stretch = 0
+        end
+
+        -- 🐌 A 15 studs: LAG 0 FPS
+        if dist < 15 and not lagAtivo then ativarLag() end
+
+        fase = fase + dt * 4
+
+        if somAlto.Parent then
+            local prog = 1 - math.clamp(dist / 400, 0, 1)
+            somAlto.Volume = 12 + prog * 8
+        end
+
+        if dist > DIST_PARADA then
+            local passo = math.min(VEL_FIGURA * dt, dist - DIST_PARADA)
+
+            -- Colisão com parede
+            if passo > 0 then
+                local origem = figPos + Vector3.new(0, 3, 0)
+                local dirMov = dir.Unit
+
+                local params = RaycastParams.new()
+                params.FilterDescendantsInstances = {char, figura}
+                params.FilterType = Enum.RaycastFilterType.Exclude
+                params.IgnoreWater = true
+
+                local hit = workspace:Raycast(origem, dirMov * (passo + 3), params)
+
+                if hit and math.abs(hit.Normal.Y) < 0.85 then
+                    local distParede = (hit.Position - origem).Magnitude
+                    passo = math.max(0, math.min(passo, distParede - 3))
+                end
+
+                if passo > 0 then
+                    figPos = figPos + dir.Unit * passo
+                end
+            end
+        end
+
+        updateFigure(CFrame.new(figPos, target), fase, false, stretch)
+
+        -- ⚡ Encostou = kick
+        if dist <= DIST_PARADA + 1 then
+            if somAlto.Parent then somAlto.Volume = 20 end
+            updateFigure(CFrame.new(figPos, target), fase, false, 1)
+            task.wait(0.3)
+            player:Kick("porque você usou exploit, porque.")
+            return
+        end
+    end
+end)
+
+task.delay(200, function()
+    pcall(function() player:Kick("Ele estava atrás de você.") end)
+end)
